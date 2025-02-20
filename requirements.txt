@@ -1,4 +1,8 @@
-educhain
 streamlit
-matplotlib
-IPython
+langchain-openai
+langchain-community
+browser-use
+playwright
+nest_asyncio
+openai
+anyio<4
