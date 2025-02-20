@@ -1,3 +1,5 @@
 streamlit
 educhain
 langchain_openai
+matplotlib
+IPython
