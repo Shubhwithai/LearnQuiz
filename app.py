@@ -1,58 +1,114 @@
-# streamlit_app.py
 import streamlit as st
-import asyncio
-import os
-import nest_asyncio
-
-from browser_use import Agent, Browser, BrowserConfig
+from educhain import Educhain, LLMConfig
 from langchain_openai import ChatOpenAI
-# from langchain_google_genai import ChatGoogleGenerativeAI # Optional: For Gemini support
 
-nest_asyncio.apply()
+# --- App Configuration ---
+st.set_page_config(
+    page_title="Multilingual Quiz Generator (Mistral Saba)",
+    page_icon="🌍",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-st.title("Browser Automation Agent with Browser-Use")
-st.markdown("Enter your OpenAI API key and a task for the agent to perform in a web browser.")
+# --- Sidebar for Settings ---
+with st.sidebar:
+    st.title("Quiz Settings")
+    st.markdown("Generate quizzes in multiple languages using Mistral Saba!")
+    st.markdown("---")
 
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-task_query = st.text_area("Task for the Agent", "What is Langchain?")
-model_name = st.selectbox("Choose OpenAI Model", ["gpt-4o-mini", "gpt-3.5-turbo"], index=0) # Added model selection
+    language_choice = st.selectbox(
+        "Select Language:",
+        ["English", "Hindi", "Tamil", "Malayalam"],
+        index=0
+    )
 
-if st.button("Run Agent"):
-    if not openai_api_key:
-        st.error("Please enter your OpenAI API Key.")
+    topic_map = {
+        "English": "Physics Basics",
+        "Hindi": "भारतीय इतिहास", # Indian History
+        "Tamil": "தமிழ் இலக்கியம்", # Tamil Literature
+        "Malayalam": "മലയാള സാഹിത്യം" # Malayalam Literature
+    }
+    topic = topic_map[language_choice] # Default topic based on language
+
+    quiz_topic = st.text_area("Enter Quiz Topic (or use default):",
+                             value=topic,
+                             placeholder=f"e.g., {topic_map[language_choice]}")
+
+    num_questions = st.slider("Number of Questions:", min_value=1, max_value=10, value=5)
+
+    st.markdown("---")
+
+    openrouter_api_key = st.text_input("Enter your OpenRouter API Key:", type="password")
+    if not openrouter_api_key:
+        st.warning("Please enter your OpenRouter API key to use Mistral Saba.")
+        mistral_saba_model = None
     else:
-        os.environ['OPENAI_API_KEY'] = openai_api_key
-        llm = ChatOpenAI(model=model_name, temperature=0) # Using selected model
-
-        config = BrowserConfig(headless=True)
-        browser = Browser(config=config)
-
-        agent = Agent(
-            task=task_query,
-            llm=llm,
-            browser=browser,
-            generate_gif=False
+        mistral_saba_model = ChatOpenAI(
+            model="mistralai/mistral-saba",
+            openai_api_key=openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1"
         )
+        st.success("OpenRouter API Key configured!")
 
-        st.info(f"Running agent with task: '{task_query}'...")
-        with st.spinner("Agent is working..."):
-            try:
-                result = asyncio.run(agent.run())
-                output_text = ""
-                for action in result.action_results():
-                    if action.is_done:
-                        output_text += action.extracted_content + "\n\n"
+    st.markdown("---")
 
-                st.success("Agent task completed successfully!")
-                if output_text:
-                    st.markdown("### Extracted Content:")
-                    st.code(output_text, language="text") # Display output in code block for better readability
-                else:
-                    st.warning("No content extracted from the actions.")
+    if st.button("Generate Quiz"):
+        if quiz_topic and mistral_saba_model:
+            st.session_state.generate_quiz = True
+        else:
+            st.warning("Please enter a topic and configure OpenRouter API Key.")
+    else:
+        st.session_state.generate_quiz = False
 
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
-                st.error(e) # Display full error for debugging
-            finally:
-                asyncio.run(browser.close())
-                st.info("Browser closed.")
+# --- Main App Content ---
+st.title("🌍 Multilingual Quiz Generator (Mistral AI Saba)")
+st.markdown("Generate quizzes in English, Hindi, Tamil, and Malayalam powered by Mistral AI Saba!")
+
+if st.session_state.generate_quiz and quiz_topic and mistral_saba_model:
+    with st.spinner(f"Generating Quiz in {language_choice} on '{quiz_topic}' using Mistral Saba..."):
+        saba_config = LLMConfig(custom_model=mistral_saba_model)
+        client = Educhain(saba_config)
+
+        try:
+            custom_instructions_map = {
+                "English": "Generate beginner-level questions in English.",
+                "Hindi": "Generate beginner-level questions in Hindi.",
+                "Tamil": "Generate beginner-level questions in Tamil.",
+                "Malayalam": "Generate beginner-level questions in Malayalam."
+            }
+
+            questions = client.qna_engine.generate_questions(
+                topic=quiz_topic,
+                num=num_questions,
+                question_type="Multiple Choice",
+                custom_instructions=custom_instructions_map[language_choice]
+            )
+
+            if questions and questions.questions:
+                st.session_state.generated_questions = questions
+
+                st.subheader(f"Generated Quiz in {language_choice} on: '{quiz_topic}'")
+
+                for i, q in enumerate(questions.questions, 1):
+                    st.markdown(f"**Question {i}:** {q.question}")
+                    for j, option in enumerate(q.options):
+                        st.write(f"  {chr(65 + j)}. {option}")
+                    st.write(f"  *(Correct Answer: {q.answer})*")
+                    st.write("---")
+
+                st.success(f"Quiz in {language_choice} generated successfully!")
+
+            else:
+                st.error("Could not generate quiz questions. Please try again or adjust settings.")
+                st.session_state.generated_questions = None
+
+        except Exception as e:
+            st.error(f"Error generating quiz: {e}")
+            st.error("Please check your API key and try again, or simplify your topic.")
+            st.session_state.generated_questions = None
+            import traceback
+            st.error(traceback.format_exc())
+
+
+elif st.session_state.generate_quiz and not quiz_topic:
+    st.warning("Please enter a topic to generate a quiz.")
