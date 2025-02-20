@@ -1,3 +1,4 @@
 educhain
 streamlit
 matplotlib
+IPython
